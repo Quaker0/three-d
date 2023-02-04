@@ -10,13 +10,15 @@ import {
   WebGLRenderer,
   Raycaster,
   Vector2,
+  LoadingManager,
 } from "three";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
+import { TWEEN } from "three/examples/jsm/libs/tween.module.min";
 
 const scene = new Scene();
 
-const light = new AmbientLight(0x404040, 2);
+const light = new AmbientLight(0x404040, 3);
 light.position.set(-2, 0, 1);
 scene.add(light);
 
@@ -47,8 +49,8 @@ scene.add(cube);
 camera.position.z = 5;
 camera.position.y = 1;
 
-const loader = new OBJLoader();
-loader.setPath("");
+const manager = new LoadingManager();
+const loader = new OBJLoader(manager);
 const materialsLoader = new MTLLoader();
 const raycaster = new Raycaster();
 let model: Object3D;
@@ -59,31 +61,33 @@ async function onPointerClick(event: MouseEvent) {
   pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
   raycaster.setFromCamera(pointer, camera);
   const intersects = raycaster.intersectObjects(scene.children);
-  let wasHidden = false;
-  for (let i = 0; i < intersects.length; i++) {
-    if (intersects[i].object?.parent?.parent?.uuid === model.uuid) {
-      intersects[i].object.visible = false;
-      wasHidden = true;
-      // await setTimeout(() => {
-      //   intersects[i].object.visible = true;
-      // }, 3_000);
-    }
-  }
-  if (wasHidden) {
+  const objs = intersects
+    .filter((o) => o.object?.parent?.parent?.uuid === model.uuid)
+    .map((o) => o.object);
+  if (objs.length) {
+    objs.map((o) => {
+      o.visible = false;
+    });
     loadHouse();
   }
 }
 
+window.addEventListener("resize", onWindowResize, false);
+function onWindowResize() {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  render();
+}
+
 function loadTent() {
-  materialsLoader.setResourcePath("");
-  materialsLoader.setPath("");
   materialsLoader.load(
-    "models/textures/tent.mtl",
+    "assets/tent/tent.mtl",
     function (materials) {
       materials.preload();
       loader.setMaterials(materials);
       loader.load(
-        "models/tent.obj",
+        "assets/tent/tent.obj",
         function onLoad(object) {
           object.scale.set(0.5, 0.5, 0.5);
           const newObj = new Object3D();
@@ -102,17 +106,20 @@ function loadTent() {
 }
 
 function loadHouse() {
-  materialsLoader.setResourcePath("");
-  materialsLoader.setPath("");
   materialsLoader.load(
-    "models/textures/house.mtl",
+    "assets/house/house.mtl",
     function (materials) {
       materials.preload();
       loader.setMaterials(materials);
       loader.load(
-        "models/house.obj",
+        "assets/house/house.obj",
         function onLoad(object) {
-          object.scale.set(0.1, 0.1, 0.1);
+          object.scale.set(0.3, 0.3, 0.3);
+          object.rotation.set(
+            model.rotation.x,
+            model.rotation.y,
+            model.rotation.z
+          );
           scene.add(object);
           model = object;
         },
@@ -133,7 +140,11 @@ function animate() {
     cube.rotation.y += 0.01;
     model.rotation.y += 0.01;
   }
-  renderer.render(scene, camera);
+  render();
 }
 addEventListener("mousedown", onPointerClick);
 animate();
+
+function render() {
+  renderer.render(scene, camera);
+}
