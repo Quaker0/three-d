@@ -1,5 +1,6 @@
 import {
   AmbientLight,
+  SphereGeometry,
   BoxGeometry,
   Color,
   Mesh,
@@ -11,10 +12,15 @@ import {
   Raycaster,
   Vector2,
   LoadingManager,
+  InstancedMesh,
+  DynamicDrawUsage,
+  MeshPhongMaterial,
+  Matrix4,
+  Vector3,
 } from "three";
 import { MTLLoader } from "three/examples/jsm/loaders/MTLLoader";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader";
-import { TWEEN } from "three/examples/jsm/libs/tween.module.min";
+import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 
 const scene = new Scene();
 
@@ -29,8 +35,11 @@ const camera = new PerspectiveCamera(
   1000
 );
 
-function onProgress(xhr: ProgressEvent<EventTarget>) {
-  // console.log((xhr.loaded / xhr.total) * 100 + "% loaded");
+function onProgress(xhr: ProgressEvent<EventTarget>, onDone?: () => void) {
+  console.log((xhr.loaded / xhr.total) * 100 + "% loaded");
+  if (onDone && xhr.loaded === xhr.total) {
+    onDone();
+  }
 }
 
 function onError(e: ErrorEvent) {
@@ -40,6 +49,9 @@ function onError(e: ErrorEvent) {
 const renderer = new WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
 
 const geometry = new BoxGeometry(3, 0.1, 3);
 const material = new MeshLambertMaterial({ color: new Color(0.12, 0.1, 0.1) });
@@ -54,6 +66,53 @@ const loader = new OBJLoader(manager);
 const materialsLoader = new MTLLoader();
 const raycaster = new Raycaster();
 let model: Object3D;
+let successTargets: Vector3[] = [];
+let successMesh: InstancedMesh;
+const spawnCount = 30;
+
+function randVal() {
+  const sign = Math.random() > 0.5 ? 1 : -1;
+  return sign * 10 * Math.random();
+}
+
+function spawnSuccess() {
+  const geometry = new SphereGeometry(0.1);
+  const material = new MeshPhongMaterial();
+  const mesh = new InstancedMesh(geometry, material, spawnCount);
+  mesh.position.set(0, 0, 1);
+  scene.add(mesh);
+
+  const color = new Color();
+  for (let i = 0; i < spawnCount; i++) {
+    color.setHex(Math.random() * 0xffffff);
+    mesh.setColorAt(i, color);
+    successMesh = mesh;
+    const target = new Vector3(randVal(), randVal(), randVal());
+    successTargets.push(target);
+  }
+  mesh.instanceMatrix.setUsage(DynamicDrawUsage);
+}
+
+function successSpawnTick() {
+  let done = false;
+  for (let i = 0; i < spawnCount; i++) {
+    const m = new Matrix4();
+    successMesh.getMatrixAt(i, m);
+    const pos = new Vector3();
+    pos.setFromMatrixPosition(m);
+    const newPosition = pos.lerp(successTargets[i], 0.02);
+    successMesh.setMatrixAt(i, m.setPosition(newPosition));
+    if (Math.abs(newPosition.x - successTargets[i].x) < 0.1) {
+      done = true;
+    }
+  }
+  if (done) {
+    successTargets = [];
+    successMesh.parent?.remove(successMesh);
+  } else {
+    successMesh.instanceMatrix.needsUpdate = true;
+  }
+}
 
 async function onPointerClick(event: MouseEvent) {
   const pointer = new Vector2();
@@ -68,7 +127,7 @@ async function onPointerClick(event: MouseEvent) {
     objs.map((o) => {
       o.visible = false;
     });
-    loadHouse();
+    loadHouse(spawnSuccess);
   }
 }
 
@@ -105,7 +164,7 @@ function loadTent() {
   );
 }
 
-function loadHouse() {
+function loadHouse(onDone: () => void) {
   materialsLoader.load(
     "assets/house/house.mtl",
     function (materials) {
@@ -123,7 +182,7 @@ function loadHouse() {
           scene.add(object);
           model = object;
         },
-        onProgress,
+        (e) => onProgress(e, onDone),
         onError
       );
     },
@@ -139,6 +198,9 @@ function animate() {
   if (model) {
     cube.rotation.y += 0.01;
     model.rotation.y += 0.01;
+  }
+  if (successTargets.length) {
+    successSpawnTick();
   }
   render();
 }
